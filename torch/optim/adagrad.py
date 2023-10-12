@@ -349,7 +349,13 @@ def _multi_tensor_adagrad(
                 device_state_sums[i] = torch.view_as_real(device_state_sums[i])
 
         # Update steps
-        torch._foreach_add_(device_state_steps, 1)
+        # If steps are on CPU, foreach will fall back to the slow path, which is a for-loop calling t.add(1) over
+        # and over. 1 will then be wrapped into a Tensor over and over again, which is slower than if we just
+        # wrapped it now and passed it to the API as an already-made tensor. So we wrap it now.
+        if str(device_state_steps[0].device) == 'cpu':
+            torch._foreach_add_(device_state_steps, torch.tensor(1.0, device='cpu'), 1.0)
+        else:
+            torch._foreach_add_(device_state_steps, 1)
 
         if weight_decay != 0:
             # Re-use the intermediate memory (device_grads) already allocated for maximize
